@@ -3,6 +3,7 @@ import type { Slide } from '@/lib/types/slides';
 import type { Action } from '@/lib/types/action';
 import type { PBLProjectConfig } from '@/lib/pbl/types';
 import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';
+import type { PedagogicalBlueprintRecord } from '@/lib/types/blueprint';
 
 export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl';
 
@@ -41,6 +42,7 @@ export interface Stage {
     color: string;
     priority: number;
   }>;
+  pedagogicalBlueprint?: PedagogicalBlueprintRecord;
 }
 
 /**

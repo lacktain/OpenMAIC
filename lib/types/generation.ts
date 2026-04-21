@@ -7,6 +7,7 @@
 
 import type { ActionType } from './action';
 import type { MediaGenerationRequest } from '@/lib/media/types';
+import type { PedagogicalSceneMetadata } from './blueprint';
 
 // ==================== PDF Image Types ====================
 
@@ -122,6 +123,8 @@ export interface SceneOutline {
   // Widget fields (required for type === 'interactive' in unified mode)
   widgetType?: WidgetType;
   widgetOutline?: WidgetOutline;
+  // Optional pedagogical contract attached by the blueprint review gate
+  pedagogicalMetadata?: PedagogicalSceneMetadata;
 }
 
 // ==================== Stage 3 Output: Generated Content ====================

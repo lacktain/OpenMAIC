@@ -77,6 +77,58 @@ export interface SceneActionsOptions {
   languageDirective?: string;
 }
 
+export function buildPedagogicalPromptContext(outline: SceneOutline): string {
+  const metadata = outline.pedagogicalMetadata;
+  if (!metadata) return '';
+
+  const lines = [
+    '## Approved Pedagogical Contract',
+    `- Merrill phase: ${metadata.pedagogicalRole.merrillPhase}`,
+    `- Instructional move: ${metadata.pedagogicalRole.instructionalMove}`,
+    `- Assessment role: ${metadata.pedagogicalRole.assessmentRole}`,
+    `- Support level: ${metadata.scaffolding.supportLevel}`,
+  ];
+
+  if (metadata.learningObjectiveIds.length > 0) {
+    lines.push(`- Learning objectives: ${metadata.learningObjectiveIds.join(', ')}`);
+  }
+  if (metadata.themeIds.length > 0) {
+    lines.push(`- Theme anchors: ${metadata.themeIds.join(', ')}`);
+  }
+  if (metadata.scaffolding.workedExample) {
+    lines.push('- Include a worked example or modelled reasoning step.');
+  }
+  if (metadata.reflectionDesign.reflectionInAction) {
+    lines.push('- Build in reflection-in-action while the learner is working.');
+  }
+  if (metadata.reflectionDesign.reflectionOnAction) {
+    lines.push('- End with reflection-on-action or transfer.');
+  }
+  if (metadata.reflectionDesign.judgmentPoint) {
+    lines.push(`- Learner judgment prompt: ${metadata.reflectionDesign.judgmentPoint}`);
+  }
+  if (metadata.reflectionDesign.reframingPrompt) {
+    lines.push(`- Reframing prompt: ${metadata.reflectionDesign.reframingPrompt}`);
+  }
+  if (metadata.factualRisk.claimsNeedingReview.length > 0) {
+    lines.push(
+      `- Claims needing careful treatment: ${metadata.factualRisk.claimsNeedingReview.join('; ')}`,
+    );
+  }
+  if (metadata.preserveConstraints.length > 0) {
+    lines.push(`- Preserve constraints: ${metadata.preserveConstraints.join('; ')}`);
+  }
+
+  return lines.join('\n');
+}
+
+function buildSceneDescriptionForPrompt(outline: SceneOutline): string {
+  const pedagogicalContext = buildPedagogicalPromptContext(outline);
+  return pedagogicalContext
+    ? `${outline.description}\n\n${pedagogicalContext}`
+    : outline.description;
+}
+
 // ==================== Stage 2: Full Scenes (Two-Step) ====================
 
 /**
@@ -329,11 +381,12 @@ export async function generateSceneContent(
         visionEnabled,
         generatedMediaMapping,
         agents,
+        languageDirective,
       );
     case 'quiz':
-      return generateQuizContent(outline, aiCall);
+      return generateQuizContent(outline, aiCall, languageDirective);
     case 'pbl':
-      return generatePBLSceneContent(outline, languageModel);
+      return generatePBLSceneContent(outline, languageModel, languageDirective);
     default:
       return null;
   }
@@ -604,6 +657,7 @@ async function generateSlideContent(
   visionEnabled?: boolean,
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
+  languageDirective?: string,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -671,13 +725,15 @@ async function generateSlideContent(
 
   const prompts = buildPrompt(PROMPT_IDS.SLIDE_CONTENT, {
     title: outline.title,
-    description: outline.description,
+    description: buildSceneDescriptionForPrompt(outline),
     keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
     elements: '（根据要点自动生成）',
     assignedImages: assignedImagesText,
     canvas_width: canvasWidth,
     canvas_height: canvasHeight,
     teacherContext,
+    languageDirective:
+      languageDirective || 'Teach in the language that matches the user requirement.',
   });
 
   if (!prompts) {
@@ -766,6 +822,7 @@ async function generateSlideContent(
 async function generateQuizContent(
   outline: SceneOutline,
   aiCall: AICallFn,
+  languageDirective?: string,
 ): Promise<GeneratedQuizContent | null> {
   const quizConfig = outline.quizConfig || {
     questionCount: 3,
@@ -775,11 +832,13 @@ async function generateQuizContent(
 
   const prompts = buildPrompt(PROMPT_IDS.QUIZ_CONTENT, {
     title: outline.title,
-    description: outline.description,
+    description: buildSceneDescriptionForPrompt(outline),
     keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
     questionCount: quizConfig.questionCount,
     difficulty: quizConfig.difficulty,
     questionTypes: quizConfig.questionTypes.join(', '),
+    languageDirective:
+      languageDirective || 'Teach in the language that matches the user requirement.',
   });
 
   if (!prompts) {
@@ -867,6 +926,7 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 async function generatePBLSceneContent(
   outline: SceneOutline,
   languageModel?: LanguageModel,
+  languageDirective?: string,
 ): Promise<GeneratedPBLContent | null> {
   if (!languageModel) {
     log.error('LanguageModel required for PBL generation');
@@ -888,7 +948,8 @@ async function generatePBLSceneContent(
         projectDescription: pblConfig.projectDescription,
         targetSkills: pblConfig.targetSkills,
         issueCount: pblConfig.issueCount,
-        languageDirective: 'Teach in the language that matches the user requirement.',
+        languageDirective:
+          languageDirective || 'Teach in the language that matches the user requirement.',
       },
       languageModel,
       {
@@ -970,7 +1031,7 @@ async function generateWidgetContent(
       promptId = PROMPT_IDS.SIMULATION_CONTENT;
       variables = {
         conceptName: widgetOutline.concept || outline.title,
-        conceptOverview: outline.description,
+        conceptOverview: buildSceneDescriptionForPrompt(outline),
         keyPoints: (outline.keyPoints || []).join('\n'),
         variables: widgetOutline.keyVariables?.join(', ') || '',
         designIdea: '',
@@ -983,7 +1044,7 @@ async function generateWidgetContent(
       variables = {
         title: outline.title,
         diagramType: widgetOutline.diagramType || 'flowchart',
-        description: outline.description,
+        description: buildSceneDescriptionForPrompt(outline),
         keyPoints: (outline.keyPoints || []).join('\n'),
         language,
       };
@@ -994,7 +1055,7 @@ async function generateWidgetContent(
       variables = {
         title: outline.title,
         programmingLanguage: widgetOutline.language || 'python',
-        description: outline.description,
+        description: buildSceneDescriptionForPrompt(outline),
         keyPoints: (outline.keyPoints || []).join('\n'),
         starterCode: '',
         testCases: '', // AI generates appropriate test cases based on challenge
@@ -1008,7 +1069,7 @@ async function generateWidgetContent(
       variables = {
         title: outline.title,
         gameType: widgetOutline.gameType || 'quiz',
-        description: outline.description,
+        description: buildSceneDescriptionForPrompt(outline),
         keyPoints: (outline.keyPoints || []).join('\n'),
         scoring: { correctPoints: 10, speedBonus: 5 },
         language,
@@ -1020,7 +1081,7 @@ async function generateWidgetContent(
       variables = {
         title: outline.title,
         visualizationType: widgetOutline.visualizationType || 'custom',
-        description: outline.description,
+        description: buildSceneDescriptionForPrompt(outline),
         keyPoints: (outline.keyPoints || []).join('\n'),
         objects: widgetOutline.objects || [],
         interactions: widgetOutline.interactions || [],
@@ -1104,7 +1165,7 @@ async function generateWidgetTeacherActions(
 ): Promise<TeacherAction[] | undefined> {
   const prompts = buildPrompt(PROMPT_IDS.WIDGET_TEACHER_ACTIONS, {
     widgetType,
-    description: outline.description,
+    description: buildSceneDescriptionForPrompt(outline),
     keyPoints: (outline.keyPoints || []).join('\n'),
     widgetConfig: JSON.stringify(widgetConfig || {}),
     language,
@@ -1162,7 +1223,7 @@ export async function generateSceneActions(
     const prompts = buildPrompt(PROMPT_IDS.SLIDE_ACTIONS, {
       title: outline.title,
       keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
-      description: outline.description,
+      description: buildSceneDescriptionForPrompt(outline),
       elements: elementsText,
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
@@ -1191,7 +1252,7 @@ export async function generateSceneActions(
     const prompts = buildPrompt(PROMPT_IDS.QUIZ_ACTIONS, {
       title: outline.title,
       keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
-      description: outline.description,
+      description: buildSceneDescriptionForPrompt(outline),
       questions: questionsText,
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
@@ -1217,7 +1278,7 @@ export async function generateSceneActions(
     const prompts = buildPrompt(PROMPT_IDS.INTERACTIVE_ACTIONS, {
       title: outline.title,
       keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
-      description: outline.description,
+      description: buildSceneDescriptionForPrompt(outline),
       conceptName: config?.conceptName || outline.title,
       designIdea: config?.designIdea || '',
       courseContext: buildCourseContext(ctx),
@@ -1244,9 +1305,9 @@ export async function generateSceneActions(
     const prompts = buildPrompt(PROMPT_IDS.PBL_ACTIONS, {
       title: outline.title,
       keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
-      description: outline.description,
+      description: buildSceneDescriptionForPrompt(outline),
       projectTopic: pblConfig?.projectTopic || outline.title,
-      projectDescription: pblConfig?.projectDescription || outline.description,
+      projectDescription: pblConfig?.projectDescription || buildSceneDescriptionForPrompt(outline),
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
     });

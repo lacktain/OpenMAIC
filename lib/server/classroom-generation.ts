@@ -6,6 +6,7 @@ import {
   applyOutlineFallbacks,
   generateSceneOutlinesFromRequirements,
 } from '@/lib/generation/outline-generator';
+import { runBlueprintReviewGate } from '@/lib/generation/lesson-blueprint';
 import {
   createSceneWithActions,
   generateSceneActions,
@@ -46,6 +47,7 @@ export type ClassroomGenerationStep =
   | 'initializing'
   | 'researching'
   | 'generating_outlines'
+  | 'reviewing_blueprint'
   | 'generating_scenes'
   | 'generating_media'
   | 'generating_tts'
@@ -299,6 +301,42 @@ export async function generateClassroom(
     totalScenes: outlines.length,
   });
 
+  await options.onProgress?.({
+    step: 'reviewing_blueprint',
+    progress: 35,
+    message: 'Reviewing pedagogical blueprint',
+    scenesGenerated: 0,
+    totalScenes: outlines.length,
+  });
+
+  const blueprintGate = runBlueprintReviewGate({
+    requirement,
+    languageDirective,
+    outlines,
+  });
+  const approvedOutlines = blueprintGate.approvedOutlines;
+
+  log.info('Pedagogical blueprint approved', {
+    revisionCount: blueprintGate.revisionCount,
+    reviewerVerdicts: blueprintGate.reviewerResults.map((result) => ({
+      reviewer: result.reviewer,
+      verdict: result.verdict,
+      score: result.overallScore,
+    })),
+    approvedSceneCount: approvedOutlines.length,
+  });
+
+  await options.onProgress?.({
+    step: 'reviewing_blueprint',
+    progress: 42,
+    message:
+      blueprintGate.revisionCount > 0
+        ? `Blueprint approved after ${blueprintGate.revisionCount} revision round${blueprintGate.revisionCount === 1 ? '' : 's'}`
+        : 'Blueprint approved for scene generation',
+    scenesGenerated: 0,
+    totalScenes: approvedOutlines.length,
+  });
+
   // Resolve agents based on agentMode — now AFTER outlines so we can use languageDirective
   let agents: AgentInfo[];
   const agentMode = input.agentMode || 'default';
@@ -318,7 +356,7 @@ export async function generateClassroom(
   const stageId = nanoid(10);
   const stage: Stage = {
     id: stageId,
-    name: outlines[0]?.title || requirement.slice(0, 50),
+    name: approvedOutlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
     languageDirective,
     style: 'interactive',
@@ -342,6 +380,14 @@ export async function generateClassroom(
       : {
           agentIds: agents.map((a) => a.id),
         }),
+    pedagogicalBlueprint: {
+      lessonBlueprint: blueprintGate.blueprint,
+      review: {
+        revisionCount: blueprintGate.revisionCount,
+        reviewerResults: blueprintGate.reviewerResults,
+        adjudication: blueprintGate.adjudication,
+      },
+    },
   };
 
   const store = createInMemoryStore(stage);
@@ -350,16 +396,16 @@ export async function generateClassroom(
   log.info('Stage 2: Generating scene content and actions...');
   let generatedScenes = 0;
 
-  for (const [index, outline] of outlines.entries()) {
+  for (const [index, outline] of approvedOutlines.entries()) {
     const safeOutline = applyOutlineFallbacks(outline, true);
-    const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 60);
+    const progressStart = 42 + Math.floor((index / Math.max(approvedOutlines.length, 1)) * 48);
 
     await options.onProgress?.({
       step: 'generating_scenes',
-      progress: Math.max(progressStart, 31),
-      message: `Generating scene ${index + 1}/${outlines.length}: ${safeOutline.title}`,
+      progress: Math.max(progressStart, 43),
+      message: `Generating scene ${index + 1}/${approvedOutlines.length}: ${safeOutline.title}`,
       scenesGenerated: generatedScenes,
-      totalScenes: outlines.length,
+      totalScenes: approvedOutlines.length,
     });
 
     const content = await generateSceneContent(safeOutline, aiCall, { agents, languageDirective });
@@ -368,7 +414,10 @@ export async function generateClassroom(
       continue;
     }
 
-    const actions = await generateSceneActions(safeOutline, content, aiCall, { agents });
+    const actions = await generateSceneActions(safeOutline, content, aiCall, {
+      agents,
+      languageDirective,
+    });
     log.info(`Scene "${safeOutline.title}": ${actions.length} actions`);
 
     const sceneId = createSceneWithActions(safeOutline, content, actions, api);
@@ -378,13 +427,13 @@ export async function generateClassroom(
     }
 
     generatedScenes += 1;
-    const progressEnd = 30 + Math.floor(((index + 1) / Math.max(outlines.length, 1)) * 60);
+    const progressEnd = 42 + Math.floor(((index + 1) / Math.max(approvedOutlines.length, 1)) * 48);
     await options.onProgress?.({
       step: 'generating_scenes',
       progress: Math.min(progressEnd, 90),
-      message: `Generated ${generatedScenes}/${outlines.length} scenes`,
+      message: `Generated ${generatedScenes}/${approvedOutlines.length} scenes`,
       scenesGenerated: generatedScenes,
-      totalScenes: outlines.length,
+      totalScenes: approvedOutlines.length,
     });
   }
 
@@ -402,11 +451,11 @@ export async function generateClassroom(
       progress: 90,
       message: 'Generating media files',
       scenesGenerated: scenes.length,
-      totalScenes: outlines.length,
+      totalScenes: approvedOutlines.length,
     });
 
     try {
-      const mediaMap = await generateMediaForClassroom(outlines, stageId, options.baseUrl);
+      const mediaMap = await generateMediaForClassroom(approvedOutlines, stageId, options.baseUrl);
       replaceMediaPlaceholders(scenes, mediaMap);
       log.info(`Media generation complete: ${Object.keys(mediaMap).length} files`);
     } catch (err) {
@@ -421,7 +470,7 @@ export async function generateClassroom(
       progress: 94,
       message: 'Generating TTS audio',
       scenesGenerated: scenes.length,
-      totalScenes: outlines.length,
+      totalScenes: approvedOutlines.length,
     });
 
     try {
@@ -437,7 +486,7 @@ export async function generateClassroom(
     progress: 98,
     message: 'Persisting classroom data',
     scenesGenerated: scenes.length,
-    totalScenes: outlines.length,
+    totalScenes: approvedOutlines.length,
   });
 
   const persisted = await persistClassroom(
@@ -456,7 +505,7 @@ export async function generateClassroom(
     progress: 100,
     message: 'Classroom generation completed',
     scenesGenerated: scenes.length,
-    totalScenes: outlines.length,
+    totalScenes: approvedOutlines.length,
   });
 
   return {
