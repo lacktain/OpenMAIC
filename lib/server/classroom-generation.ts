@@ -339,8 +339,8 @@ export async function generateClassroom(
 
   // Resolve agents based on agentMode — now AFTER outlines so we can use languageDirective
   let agents: AgentInfo[];
-  const agentMode = input.agentMode || 'default';
-  if (agentMode === 'generate') {
+  let effectiveAgentMode: 'default' | 'generate' = input.agentMode || 'default';
+  if (effectiveAgentMode === 'generate') {
     log.info('Generating custom agent profiles via LLM...');
     try {
       agents = await generateAgentProfiles(requirement, languageDirective, aiCall);
@@ -348,6 +348,7 @@ export async function generateClassroom(
     } catch (e) {
       log.warn('Agent profile generation failed, falling back to defaults:', e);
       agents = getDefaultAgents();
+      effectiveAgentMode = 'default';
     }
   } else {
     agents = getDefaultAgents();
@@ -365,7 +366,7 @@ export async function generateClassroom(
     // For LLM-generated agents, embed full configs so the client can
     // hydrate the agent registry without prior IndexedDB data.
     // For default agents, just record IDs — the client already has them.
-    ...(agentMode === 'generate'
+    ...(effectiveAgentMode === 'generate'
       ? {
           generatedAgentConfigs: agents.map((a, i) => ({
             id: a.id,
