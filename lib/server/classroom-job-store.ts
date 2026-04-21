@@ -36,6 +36,17 @@ export interface ClassroomGenerationJob {
     classroomId: string;
     url: string;
     scenesCount: number;
+    stageName?: string;
+    blueprintReview?: {
+      revisionCount: number;
+      releaseForSceneGeneration: boolean;
+      approvedSceneCount: number;
+      reviewerVerdicts: Array<{
+        reviewer: 'sme' | 'merrill' | 'schon';
+        verdict: 'pass' | 'revise' | 'fail';
+        score: number;
+      }>;
+    };
   };
   error?: string;
 }
@@ -195,6 +206,22 @@ export async function markClassroomGenerationJobSucceeded(
   jobId: string,
   result: GenerateClassroomResult,
 ): Promise<ClassroomGenerationJob> {
+  const blueprintReview = result.stage.pedagogicalBlueprint
+    ? {
+        revisionCount: result.stage.pedagogicalBlueprint.review.revisionCount,
+        releaseForSceneGeneration:
+          result.stage.pedagogicalBlueprint.review.adjudication.releaseForSceneGeneration,
+        approvedSceneCount: result.scenesCount,
+        reviewerVerdicts: result.stage.pedagogicalBlueprint.review.reviewerResults.map(
+          (reviewerResult) => ({
+            reviewer: reviewerResult.reviewer,
+            verdict: reviewerResult.verdict,
+            score: reviewerResult.overallScore,
+          }),
+        ),
+      }
+    : undefined;
+
   return updateClassroomGenerationJob(jobId, {
     status: 'succeeded',
     step: 'completed',
@@ -206,6 +233,8 @@ export async function markClassroomGenerationJobSucceeded(
       classroomId: result.id,
       url: result.url,
       scenesCount: result.scenesCount,
+      stageName: result.stage.name,
+      ...(blueprintReview ? { blueprintReview } : {}),
     },
   });
 }

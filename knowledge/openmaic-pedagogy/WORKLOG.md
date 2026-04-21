@@ -82,12 +82,48 @@ To fully align the implementation with the earlier 19 academic weeks, gather or 
   - `corepack pnpm exec vitest run tests/server`
 - Current green state: `6` server test files, `50` tests passing.
 
+### Implementation loop 3, job/API review visibility
+- Extended classroom job success payloads in `lib/server/classroom-job-store.ts` with a compact blueprint-review summary instead of forcing later consumers to re-open the persisted classroom just to understand what happened.
+- Successful job results now include:
+  - `stageName`
+  - `blueprintReview.revisionCount`
+  - `blueprintReview.releaseForSceneGeneration`
+  - `blueprintReview.approvedSceneCount`
+  - compact reviewer verdict/score rows
+- Kept the change backward-compatible by only including `blueprintReview` when the stage actually has pedagogical blueprint data.
+- Added `tests/server/classroom-job-store.test.ts` to verify both:
+  - blueprint summary persistence on successful pedagogical runs
+  - unchanged success-result behavior when no blueprint metadata exists
+
+### Implementation loop 3, checks and findings
+- Re-ran formatting, type-checking, and the full server test suite after the job-store change.
+- Current green state: `7` server test files, `52` tests passing.
+
+### Implementation loop 4, prompt-driven review modules and hybrid live gate
+- Added `lib/generation/lesson-blueprint-ai.ts` as the prompt-facing review orchestration layer.
+  - normalizes prompt reviewer/adjudicator outputs
+  - merges prompt results with heuristic fallbacks in hybrid mode
+  - supports prompt-driven revision attempts with schema validation
+- Added dedicated prompt IDs and templates for:
+  - SME review
+  - Merrill review
+  - Schön review
+  - adjudication
+  - revision
+- Upgraded `runBlueprintReviewGate(...)` so it can run in:
+  - `heuristic`
+  - `prompt`
+  - `hybrid`
+- The live classroom pipeline now uses the hybrid blueprint gate and emits clearer progress/error behavior around review rounds.
+- Added richer review-round metadata (`reviewMode`, `reviewRounds`) and structured `BlueprintReviewError` reporting for prompt-driven failures.
+- Existing test coverage now includes prompt/hybrid review behavior and prompt-driven fail surfacing in `tests/server/pedagogical-blueprint-review.test.ts`.
+
 ### Current implementation state
 - The repo now contains a real, tested outline-stage pedagogical blueprint/review gate.
-- The current slice is intentionally heuristic-first and upstream-friendly.
-- Cloud-infrastructure alignment exists as lightweight learner/outcome/risk heuristics, not as a hard-coded curriculum fork.
+- That gate is integrated into live classroom generation, can operate in heuristic/prompt/hybrid modes, influences downstream scene prompts, persists onto the stage, and now also surfaces a compact review summary through the async job/status path.
+- Cloud-infrastructure alignment currently exists as lightweight learner/outcome/risk heuristics, not yet as a full curriculum graph.
 - The next highest-value slice is probably one of:
-  1. expose review artifacts more cleanly through job/API surfaces for UI/debug visibility
-  2. add prompt/template and eval coverage around blueprint-guided scene generation quality
-  3. start introducing curriculum-aware mapping from the cloud-infra materials into blueprint outcomes/themes without over-specializing the generic path
+  1. add eval coverage around blueprint-guided scene generation quality, not just schema/pipeline behavior
+  2. start curriculum-aware mapping from the cloud-infra materials into blueprint outcomes/themes without over-specializing the generic path
+  3. improve operator/debug visibility for per-round prompt review traces in a safe compact form
 

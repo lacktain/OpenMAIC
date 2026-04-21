@@ -6,7 +6,11 @@ import {
   applyOutlineFallbacks,
   generateSceneOutlinesFromRequirements,
 } from '@/lib/generation/outline-generator';
-import { runBlueprintReviewGate } from '@/lib/generation/lesson-blueprint';
+import {
+  BlueprintReviewError,
+  type BlueprintReviewGateResult,
+  runBlueprintReviewGate,
+} from '@/lib/generation/lesson-blueprint';
 import {
   createSceneWithActions,
   generateSceneActions,
@@ -309,14 +313,49 @@ export async function generateClassroom(
     totalScenes: outlines.length,
   });
 
-  const blueprintGate = runBlueprintReviewGate({
-    requirement,
-    languageDirective,
-    outlines,
-  });
+  let blueprintGate: BlueprintReviewGateResult;
+  try {
+    blueprintGate = await runBlueprintReviewGate(
+      {
+        requirement,
+        languageDirective,
+        outlines,
+      },
+      {
+        aiCall,
+        reviewMode: 'hybrid',
+        onReviewRound: async (reviewRound) => {
+          if (reviewRound.adjudication.verdict !== 'revise') return;
+
+          await options.onProgress?.({
+            step: 'reviewing_blueprint',
+            progress: 38,
+            message: `Blueprint requested revisions after review round ${reviewRound.round}, applying targeted fixes`,
+            scenesGenerated: 0,
+            totalScenes: outlines.length,
+          });
+        },
+      },
+    );
+  } catch (error) {
+    if (error instanceof BlueprintReviewError) {
+      await options.onProgress?.({
+        step: 'reviewing_blueprint',
+        progress: 42,
+        message:
+          error.failureType === 'max_revisions'
+            ? `Blueprint review did not converge after ${error.revisionCount} revision round${error.revisionCount === 1 ? '' : 's'}`
+            : `Blueprint review failed: ${error.lastAdjudication.summary}`,
+        scenesGenerated: 0,
+        totalScenes: outlines.length,
+      });
+    }
+    throw error;
+  }
   const approvedOutlines = blueprintGate.approvedOutlines;
 
   log.info('Pedagogical blueprint approved', {
+    reviewMode: blueprintGate.reviewMode,
     revisionCount: blueprintGate.revisionCount,
     reviewerVerdicts: blueprintGate.reviewerResults.map((result) => ({
       reviewer: result.reviewer,

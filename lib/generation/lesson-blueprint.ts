@@ -13,6 +13,13 @@ import {
   type BlueprintAdjudicationResult,
   type PedagogicalSceneMetadata,
 } from '@/lib/types/blueprint';
+import type { AICallFn } from './pipeline-types';
+import {
+  adjudicateBlueprintWithPromptModule,
+  reviewBlueprintWithPromptModules,
+  reviseBlueprintWithPromptModule,
+  type BlueprintReviewMode,
+} from './lesson-blueprint-ai';
 
 export interface CreateLessonBlueprintInput {
   requirement: string;
@@ -26,6 +33,50 @@ export interface BlueprintReviewGateResult {
   adjudication: BlueprintAdjudicationResult;
   approvedOutlines: SceneOutline[];
   revisionCount: number;
+  reviewMode: BlueprintReviewMode;
+  reviewRounds: BlueprintReviewRound[];
+}
+
+export interface BlueprintReviewRound {
+  round: number;
+  mode: BlueprintReviewMode;
+  reviewerResults: BlueprintReviewerResult[];
+  adjudication: BlueprintAdjudicationResult;
+}
+
+export interface BlueprintReviewGateOptions {
+  maxRevisionRounds?: number;
+  aiCall?: AICallFn;
+  reviewMode?: BlueprintReviewMode;
+  onReviewRound?: (reviewRound: BlueprintReviewRound) => Promise<void> | void;
+}
+
+export class BlueprintReviewError extends Error {
+  readonly failureType: 'fail' | 'max_revisions';
+  readonly reviewMode: BlueprintReviewMode;
+  readonly revisionCount: number;
+  readonly reviewRounds: BlueprintReviewRound[];
+  readonly lastReviewerResults: BlueprintReviewerResult[];
+  readonly lastAdjudication: BlueprintAdjudicationResult;
+
+  constructor(params: {
+    message: string;
+    failureType: 'fail' | 'max_revisions';
+    reviewMode: BlueprintReviewMode;
+    revisionCount: number;
+    reviewRounds: BlueprintReviewRound[];
+    lastReviewerResults: BlueprintReviewerResult[];
+    lastAdjudication: BlueprintAdjudicationResult;
+  }) {
+    super(params.message);
+    this.name = 'BlueprintReviewError';
+    this.failureType = params.failureType;
+    this.reviewMode = params.reviewMode;
+    this.revisionCount = params.revisionCount;
+    this.reviewRounds = params.reviewRounds;
+    this.lastReviewerResults = params.lastReviewerResults;
+    this.lastAdjudication = params.lastAdjudication;
+  }
 }
 
 const CLOUD_KEYWORDS = [
@@ -584,6 +635,18 @@ export function createLessonBlueprint(input: CreateLessonBlueprintInput): Lesson
     prerequisites: buildPrerequisites(topic, lessonMode, input.outlines),
     themeGraph: buildThemeGraph(scenePlan),
     scenePlan,
+  });
+}
+
+export function normalizeLessonBlueprint(blueprint: LessonBlueprint): LessonBlueprint {
+  const topic = blueprint.lessonIntent.topic;
+  const lessonMode = blueprint.lessonIntent.lessonMode;
+  const scenePlan = normalizeScenePlan(blueprint.scenePlan, topic, lessonMode);
+
+  return lessonBlueprintSchema.parse({
+    ...blueprint,
+    scenePlan,
+    themeGraph: buildThemeGraph(scenePlan),
   });
 }
 
@@ -1215,9 +1278,16 @@ function createIntegrationScene(
   };
 }
 
+function instructionIncludesAny(instructions: string[], keywords: string[]): boolean {
+  return instructions.some((instruction) =>
+    keywords.some((keyword) => instruction.includes(keyword)),
+  );
+}
+
 export function reviseLessonBlueprint(
   blueprint: LessonBlueprint,
   reviewerResults: BlueprintReviewerResult[],
+  adjudication?: BlueprintAdjudicationResult,
 ): LessonBlueprint {
   const revised = deepCopy(blueprint);
   let scenePlan = deepCopy(revised.scenePlan);
@@ -1227,8 +1297,22 @@ export function reviseLessonBlueprint(
   const issueTypes = new Set(
     reviewerResults.flatMap((result) => result.issues.map((issue) => issue.type)),
   );
+  const revisionInstructions = [
+    ...reviewerResults.flatMap((result) => result.issues.map((issue) => issue.suggestedRevision)),
+    ...(adjudication?.requiredRevisions.map((revision) => revision.instruction) || []),
+  ].map((instruction) => normalizeText(instruction).toLowerCase());
 
-  if (issueTypes.has('assessment_before_framing') || issueTypes.has('missing_activation')) {
+  if (
+    issueTypes.has('assessment_before_framing') ||
+    issueTypes.has('missing_activation') ||
+    instructionIncludesAny(revisionInstructions, [
+      'activate prior knowledge',
+      'motivating problem',
+      'opening scene',
+      'frame the lesson',
+      'problem-framing',
+    ])
+  ) {
     const firstScene = scenePlan[0];
     if (!firstScene || firstScene.type === 'quiz') {
       scenePlan.unshift(createIntroScene(topic, learningObjectiveIds));
@@ -1242,7 +1326,16 @@ export function reviseLessonBlueprint(
     }
   }
 
-  if (issueTypes.has('missing_demonstration')) {
+  if (
+    issueTypes.has('missing_demonstration') ||
+    instructionIncludesAny(revisionInstructions, [
+      'step-by-step',
+      'worked example',
+      'models the concept',
+      'clear demonstration',
+      'modelling phase',
+    ])
+  ) {
     const candidate =
       scenePlan.find(
         (scene, index) =>
@@ -1263,7 +1356,17 @@ export function reviseLessonBlueprint(
     }
   }
 
-  if (issueTypes.has('missing_application') || issueTypes.has('missing_action_feedback_loop')) {
+  if (
+    issueTypes.has('missing_application') ||
+    issueTypes.has('missing_action_feedback_loop') ||
+    instructionIncludesAny(revisionInstructions, [
+      'guided or independent application',
+      'apply what was demonstrated',
+      'action-feedback opportunity',
+      'guided scenario',
+      'application scene',
+    ])
+  ) {
     const hasApplication = scenePlan.some(
       (scene) => scene.pedagogicalRole.merrillPhase === 'application',
     );
@@ -1284,7 +1387,15 @@ export function reviseLessonBlueprint(
     issueTypes.has('missing_integration') ||
     issueTypes.has('missing_reflection_on_action') ||
     issueTypes.has('missing_judgment_practice') ||
-    issueTypes.has('weak_reflective_loop')
+    issueTypes.has('weak_reflective_loop') ||
+    instructionIncludesAny(revisionInstructions, [
+      'reflection/transfer scene',
+      'closing reflection',
+      'reflect on what they did',
+      'justify one decision',
+      'integration',
+      'transfer',
+    ])
   ) {
     const finalScene = scenePlan[scenePlan.length - 1];
     if (!finalScene || finalScene.pedagogicalRole.merrillPhase !== 'integration') {
@@ -1300,7 +1411,10 @@ export function reviseLessonBlueprint(
     }
   }
 
-  if (issueTypes.has('missing_prerequisites')) {
+  if (
+    issueTypes.has('missing_prerequisites') ||
+    instructionIncludesAny(revisionInstructions, ['prerequisite', 'prior knowledge'])
+  ) {
     revised.prerequisites =
       revised.prerequisites.length > 0
         ? revised.prerequisites
@@ -1314,7 +1428,11 @@ export function reviseLessonBlueprint(
           ];
   }
 
-  if (issueTypes.has('missing_outcomes') && revised.outcomes.length === 0) {
+  if (
+    (issueTypes.has('missing_outcomes') ||
+      instructionIncludesAny(revisionInstructions, ['learning outcome', 'explicit outcome'])) &&
+    revised.outcomes.length === 0
+  ) {
     revised.outcomes = [
       {
         id: 'lo_1',
@@ -1329,7 +1447,7 @@ export function reviseLessonBlueprint(
 
   revised.scenePlan = scenePlan;
   revised.themeGraph = buildThemeGraph(scenePlan);
-  return lessonBlueprintSchema.parse(revised);
+  return normalizeLessonBlueprint(revised);
 }
 
 function buildPedagogicalMetadata(scene: LessonBlueprintScene): PedagogicalSceneMetadata {
@@ -1375,17 +1493,59 @@ export function blueprintToApprovedOutlines(blueprint: LessonBlueprint): SceneOu
   }));
 }
 
-export function runBlueprintReviewGate(
+function summarizeBlockingIssues(reviewerResults: BlueprintReviewerResult[]): string {
+  return reviewerResults
+    .flatMap((result) => result.issues)
+    .filter((issue) => issue.severity !== 'minor')
+    .map((issue) => issue.message)
+    .slice(0, 4)
+    .join(' | ');
+}
+
+export async function runBlueprintReviewGate(
   input: CreateLessonBlueprintInput,
-  options?: { maxRevisionRounds?: number },
-): BlueprintReviewGateResult {
+  options?: BlueprintReviewGateOptions,
+): Promise<BlueprintReviewGateResult> {
   const maxRevisionRounds = options?.maxRevisionRounds ?? 1;
+  const reviewMode: BlueprintReviewMode = options?.aiCall
+    ? options?.reviewMode || 'hybrid'
+    : 'heuristic';
   let revisionCount = 0;
   let blueprint = createLessonBlueprint(input);
+  const reviewRounds: BlueprintReviewRound[] = [];
 
   while (true) {
-    const reviewerResults = reviewLessonBlueprint(blueprint);
-    const adjudication = adjudicateBlueprintReview(blueprint, reviewerResults);
+    const heuristicReviewerResults = reviewLessonBlueprint(blueprint);
+    const reviewerResults =
+      options?.aiCall && reviewMode !== 'heuristic'
+        ? await reviewBlueprintWithPromptModules({
+            blueprint,
+            aiCall: options.aiCall,
+            fallbackReviewerResults: heuristicReviewerResults,
+            mode: reviewMode,
+          })
+        : heuristicReviewerResults;
+
+    const heuristicAdjudication = adjudicateBlueprintReview(blueprint, reviewerResults);
+    const adjudication =
+      options?.aiCall && reviewMode !== 'heuristic'
+        ? await adjudicateBlueprintWithPromptModule({
+            blueprint,
+            reviewerResults,
+            fallbackAdjudication: heuristicAdjudication,
+            aiCall: options.aiCall,
+            mode: reviewMode,
+          })
+        : heuristicAdjudication;
+
+    const reviewRound: BlueprintReviewRound = {
+      round: reviewRounds.length + 1,
+      mode: reviewMode,
+      reviewerResults,
+      adjudication,
+    };
+    reviewRounds.push(reviewRound);
+    await options?.onReviewRound?.(reviewRound);
 
     if (adjudication.verdict === 'pass') {
       return {
@@ -1394,26 +1554,48 @@ export function runBlueprintReviewGate(
         adjudication,
         approvedOutlines: blueprintToApprovedOutlines(blueprint),
         revisionCount,
+        reviewMode,
+        reviewRounds,
       };
     }
 
     if (adjudication.verdict === 'fail') {
-      const blockingSummary = reviewerResults
-        .flatMap((result) => result.issues)
-        .filter((issue) => issue.severity !== 'minor')
-        .map((issue) => issue.message)
-        .slice(0, 4)
-        .join(' | ');
-      throw new Error(`Blueprint review failed: ${blockingSummary || adjudication.summary}`);
+      throw new BlueprintReviewError({
+        message: `Blueprint review failed: ${summarizeBlockingIssues(reviewerResults) || adjudication.summary}`,
+        failureType: 'fail',
+        reviewMode,
+        revisionCount,
+        reviewRounds,
+        lastReviewerResults: reviewerResults,
+        lastAdjudication: adjudication,
+      });
     }
 
     if (revisionCount >= maxRevisionRounds) {
-      throw new Error(
-        `Blueprint review exceeded ${maxRevisionRounds} revision round(s): ${adjudication.summary}`,
-      );
+      throw new BlueprintReviewError({
+        message: `Blueprint review exceeded ${maxRevisionRounds} revision round(s): ${adjudication.summary}`,
+        failureType: 'max_revisions',
+        reviewMode,
+        revisionCount,
+        reviewRounds,
+        lastReviewerResults: reviewerResults,
+        lastAdjudication: adjudication,
+      });
     }
 
-    blueprint = reviseLessonBlueprint(blueprint, reviewerResults);
+    const promptRevision =
+      options?.aiCall && reviewMode !== 'heuristic'
+        ? await reviseBlueprintWithPromptModule({
+            blueprint,
+            reviewerResults,
+            adjudication,
+            aiCall: options.aiCall,
+          })
+        : null;
+
+    blueprint = promptRevision
+      ? normalizeLessonBlueprint(promptRevision)
+      : reviseLessonBlueprint(blueprint, reviewerResults, adjudication);
     revisionCount += 1;
   }
 }
