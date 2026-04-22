@@ -127,3 +127,18 @@ To fully align the implementation with the earlier 19 academic weeks, gather or 
   2. start curriculum-aware mapping from the cloud-infra materials into blueprint outcomes/themes without over-specializing the generic path
   3. improve operator/debug visibility for per-round prompt review traces in a safe compact form
 
+### Packaging and deployment prep for external testing
+- Added a first external-deployment packaging pass for the pedagogical branch.
+- `docker-compose.yml` is now more production-friendly for swap testing:
+  - explicit image/build settings
+  - production env defaults
+  - stable container name
+  - named persistent volume
+  - basic internal healthcheck
+- Added `knowledge/openmaic-pedagogy/DEPLOYMENT.md` with clone/build/run notes for a separate environment with its own keys and `ACCESS_CODE`.
+- Also have in-flight cloud-curriculum mapping changes to tie blueprint themes, outcomes, and prerequisites more directly to the 19-week cloud-infrastructure material.
+
+### Push status
+- Local commit/push preparation is in progress, but the repo currently only has the public upstream OpenMAIC remote configured.
+- A writable remote or fork is still needed before the branch can be pushed externally.
+

@@ -15,6 +15,13 @@ import {
 } from '@/lib/types/blueprint';
 import type { AICallFn } from './pipeline-types';
 import {
+  getCloudCurriculumStrandById,
+  isCloudCurriculumContext,
+  matchCloudCurriculumStrands,
+  matchCloudCurriculumStrandForOutline,
+  type CloudCurriculumStrand,
+} from './cloud-curriculum-profile';
+import {
   adjudicateBlueprintWithPromptModule,
   reviewBlueprintWithPromptModules,
   reviseBlueprintWithPromptModule,
@@ -243,6 +250,7 @@ function buildOutcomes(
   requirement: string,
   lessonMode: LessonMode,
   outlines: SceneOutline[],
+  cloudCurriculumStrands: CloudCurriculumStrand[],
 ): BlueprintOutcome[] {
   const outcomeStatements = new Map<string, BlueprintOutcome>();
 
@@ -273,8 +281,9 @@ function buildOutcomes(
     });
   }
 
-  if (hasKeyword(requirement, CLOUD_KEYWORDS)) {
+  if (isCloudCurriculumContext(requirement, outlines)) {
     const cloudOutcomes = [
+      ...cloudCurriculumStrands.flatMap((strand) => strand.outcomes),
       'Explain the vocational choices involved in a stable and scalable cloud infrastructure solution',
       'Apply cloud knowledge to troubleshoot configuration, security, or reliability issues',
       'Reflect on user needs, business needs, and compliance when making cloud decisions',
@@ -300,30 +309,41 @@ function buildPrerequisites(
   topic: string,
   lessonMode: LessonMode,
   outlines: SceneOutline[],
+  cloudCurriculumStrands: CloudCurriculumStrand[],
 ): BlueprintPrerequisite[] {
-  const candidates = new Set<string>();
+  const candidates: string[] = [];
+  const seen = new Set<string>();
+  const addCandidate = (statement: string) => {
+    const normalized = normalizeText(statement);
+    if (!normalized || seen.has(normalized)) return;
+    seen.add(normalized);
+    candidates.push(statement);
+  };
+
+  if (cloudCurriculumStrands.length > 0) {
+    cloudCurriculumStrands
+      .flatMap((strand) => strand.prerequisites)
+      .slice(0, 4)
+      .forEach((statement) => addCandidate(statement));
+  }
 
   const firstContentScene = outlines.find((outline) => outline.type !== 'quiz');
-  firstContentScene?.keyPoints
-    .slice(0, 2)
-    .forEach((keyPoint) => candidates.add(normalizeText(keyPoint)));
+  firstContentScene?.keyPoints.slice(0, 2).forEach((keyPoint) => addCandidate(keyPoint));
 
-  if (candidates.size === 0) {
-    candidates.add(`Basic familiarity with the language and concepts used in ${topic}`);
+  if (candidates.length === 0) {
+    addCandidate(`Basic familiarity with the language and concepts used in ${topic}`);
   }
 
   if (lessonMode === 'skill' || lessonMode === 'project') {
-    candidates.add('Willingness to try, observe feedback, and revise an approach during practice');
+    addCandidate('Willingness to try, observe feedback, and revise an approach during practice');
   }
 
-  return Array.from(candidates)
-    .slice(0, 3)
-    .map((statement, index) => ({
-      id: `pre_${index + 1}`,
-      statement,
-      required: index === 0,
-      canBeActivatedInLesson: index > 0,
-    }));
+  return candidates.slice(0, 3).map((statement, index) => ({
+    id: `pre_${index + 1}`,
+    statement,
+    required: index === 0,
+    canBeActivatedInLesson: index > 0,
+  }));
 }
 
 function inferAssessmentRole(
@@ -416,13 +436,18 @@ function buildScenePlan(
   lessonMode: LessonMode,
   outcomes: BlueprintOutcome[],
   outlines: SceneOutline[],
+  cloudCurriculumStrands: CloudCurriculumStrand[],
 ): LessonBlueprintScene[] {
   return outlines.map((outline, index) => {
     const totalScenes = outlines.length;
     const phase = inferMerrillPhase(outline, index, totalScenes, lessonMode);
     const assessmentRole = inferAssessmentRole(outline, index, totalScenes);
     const relatedOutcome = outcomes[Math.min(index, outcomes.length - 1)] || outcomes[0];
-    const themeId = `theme_${index + 1}`;
+    const matchedCloudStrand = matchCloudCurriculumStrandForOutline(
+      outline,
+      cloudCurriculumStrands,
+    );
+    const themeId = matchedCloudStrand?.id || `theme_${index + 1}`;
     const supportLevel = inferSupportLevel(index, totalScenes);
     const reflectionRelevant =
       phase === 'application' ||
@@ -486,19 +511,35 @@ function buildScenePlan(
 }
 
 function buildThemeGraph(scenePlan: LessonBlueprintScene[]): BlueprintTheme[] {
-  return scenePlan.map((scene, index) => ({
-    id: scene.themeIds[0] || `theme_${index + 1}`,
-    title: scene.title,
-    dependsOn: index > 0 ? [scenePlan[index - 1].themeIds[0] || `theme_${index}`] : [],
-    rationale:
-      scene.pedagogicalRole.merrillPhase === 'integration'
-        ? 'Closes the lesson by connecting and extending previous learning.'
-        : scene.pedagogicalRole.merrillPhase === 'application'
-          ? 'Lets the learner apply earlier ideas with guidance or feedback.'
-          : index === 0
-            ? 'Establishes the entry point and activates prior knowledge.'
-            : 'Deepens or extends the previous scene in sequence.',
-  }));
+  const uniqueThemeIds = scenePlan.reduce<string[]>((themeIds, scene, index) => {
+    const themeId = scene.themeIds[0] || `theme_${index + 1}`;
+    if (!themeIds.includes(themeId)) {
+      themeIds.push(themeId);
+    }
+    return themeIds;
+  }, []);
+
+  return uniqueThemeIds.map((themeId, index) => {
+    const scene =
+      scenePlan.find((candidate) => (candidate.themeIds[0] || `theme_${index + 1}`) === themeId) ||
+      scenePlan[index];
+    const cloudStrand = getCloudCurriculumStrandById(themeId);
+
+    return {
+      id: themeId,
+      title: cloudStrand?.title || scene.title,
+      dependsOn: index > 0 ? [uniqueThemeIds[index - 1]] : [],
+      rationale: cloudStrand?.rationale
+        ? cloudStrand.rationale
+        : scene.pedagogicalRole.merrillPhase === 'integration'
+          ? 'Closes the lesson by connecting and extending previous learning.'
+          : scene.pedagogicalRole.merrillPhase === 'application'
+            ? 'Lets the learner apply earlier ideas with guidance or feedback.'
+            : index === 0
+              ? 'Establishes the entry point and activates prior knowledge.'
+              : 'Deepens or extends the previous scene in sequence.',
+    };
+  });
 }
 
 function normalizeScenePlan(
@@ -615,9 +656,16 @@ function normalizeScenePlan(
 export function createLessonBlueprint(input: CreateLessonBlueprintInput): LessonBlueprint {
   const lessonMode = inferLessonMode(input.requirement, input.outlines);
   const topic = topicFromRequirement(input.requirement, input.outlines);
-  const outcomes = buildOutcomes(topic, input.requirement, lessonMode, input.outlines);
+  const cloudCurriculumStrands = matchCloudCurriculumStrands(input.requirement, input.outlines);
+  const outcomes = buildOutcomes(
+    topic,
+    input.requirement,
+    lessonMode,
+    input.outlines,
+    cloudCurriculumStrands,
+  );
   const scenePlan = normalizeScenePlan(
-    buildScenePlan(topic, lessonMode, outcomes, input.outlines),
+    buildScenePlan(topic, lessonMode, outcomes, input.outlines, cloudCurriculumStrands),
     topic,
     lessonMode,
   );
@@ -632,7 +680,7 @@ export function createLessonBlueprint(input: CreateLessonBlueprintInput): Lesson
       languageDirective: input.languageDirective,
     },
     outcomes,
-    prerequisites: buildPrerequisites(topic, lessonMode, input.outlines),
+    prerequisites: buildPrerequisites(topic, lessonMode, input.outlines, cloudCurriculumStrands),
     themeGraph: buildThemeGraph(scenePlan),
     scenePlan,
   });

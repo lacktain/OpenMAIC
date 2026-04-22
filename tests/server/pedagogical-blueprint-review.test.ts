@@ -154,6 +154,61 @@ describe('pedagogical blueprint review gate', () => {
     ).toBe(true);
   });
 
+  test('cloud curriculum strands shape blueprint themes and outcomes for governance-heavy topics', async () => {
+    const outlines: SceneOutline[] = [
+      makeOutline({
+        id: 'scene_1',
+        order: 1,
+        title: 'Terraform deployment workflow',
+        keyPoints: ['Repeatable infrastructure changes', 'State handling and review'],
+      }),
+      makeOutline({
+        id: 'scene_2',
+        order: 2,
+        title: 'RBAC and policy enforcement',
+        keyPoints: ['Least privilege', 'Policy guardrails and auditability'],
+      }),
+      makeOutline({
+        id: 'scene_3',
+        order: 3,
+        title: 'Compliance-aware change review',
+        keyPoints: ['Documenting approvals', 'Protecting personal and corporate data'],
+      }),
+    ];
+
+    const result = await runBlueprintReviewGate({
+      requirement:
+        'Create a lesson for second-year vocational cloud infrastructure students about Terraform, RBAC, policy enforcement, and compliance automation.',
+      languageDirective: 'Teach in English.',
+      outlines,
+    });
+
+    expect(
+      result.blueprint.themeGraph.some((theme) =>
+        /Infrastructure as Code, governance and secure operations/i.test(theme.title),
+      ),
+    ).toBe(true);
+    expect(
+      result.blueprint.outcomes.some((outcome) =>
+        /ethical requirements|security in the cloud|personal and corporate data/i.test(
+          outcome.statement,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      result.blueprint.prerequisites.some((prerequisite) =>
+        /permissions|repeatable deployment workflows|ethical consequences/i.test(
+          prerequisite.statement,
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      result.blueprint.scenePlan.some((scene) =>
+        scene.themeIds.includes('iac_governance_and_security'),
+      ),
+    ).toBe(true);
+  });
+
   test('prompt-driven review modules can steer a revise-to-pass loop with round history', async () => {
     const outlines: SceneOutline[] = [
       makeOutline({

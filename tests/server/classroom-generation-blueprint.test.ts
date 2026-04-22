@@ -56,9 +56,13 @@ vi.mock('@/lib/generation/outline-generator', () => ({
   applyOutlineFallbacks: vi.fn((outline: SceneOutline) => outline),
 }));
 
-vi.mock('@/lib/generation/lesson-blueprint', () => ({
-  runBlueprintReviewGate: runBlueprintReviewGateMock,
-}));
+vi.mock('@/lib/generation/lesson-blueprint', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/generation/lesson-blueprint')>();
+  return {
+    ...actual,
+    runBlueprintReviewGate: runBlueprintReviewGateMock,
+  };
+});
 
 vi.mock('@/lib/server/classroom-storage', () => ({
   persistClassroom: persistClassroomMock,
