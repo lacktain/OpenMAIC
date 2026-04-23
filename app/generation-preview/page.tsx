@@ -27,8 +27,10 @@ import type { Stage } from '@/lib/types/stage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
+import type { PedagogicalPreflightResult } from '@/lib/generation/pedagogical-preflight';
 import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types';
 import { StepVisualizer } from './components/visualizers';
+import { PedagogicalReviewPanel } from './components/pedagogical-review-panel';
 
 const log = createLogger('GenerationPreview');
 
@@ -62,6 +64,12 @@ function GenerationPreviewContent() {
     }>
   >([]);
   const agentRevealResolveRef = useRef<(() => void) | null>(null);
+  const pedagogicalApprovalResolveRef = useRef<(() => void) | null>(null);
+
+  const [pedagogicalReview, setPedagogicalReview] = useState<PedagogicalPreflightResult | null>(
+    null,
+  );
+  const [awaitingPedagogicalApproval, setAwaitingPedagogicalApproval] = useState(false);
 
   // Compute active steps based on session state
   const activeSteps = getActiveSteps(session);
@@ -116,6 +124,31 @@ function GenerationPreviewContent() {
       'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
     };
   };
+
+  const waitForPedagogicalApproval = (signal: AbortSignal) =>
+    new Promise<void>((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new DOMException('Generation aborted', 'AbortError'));
+        return;
+      }
+
+      setAwaitingPedagogicalApproval(true);
+
+      const handleAbort = () => {
+        pedagogicalApprovalResolveRef.current = null;
+        setAwaitingPedagogicalApproval(false);
+        reject(new DOMException('Generation aborted', 'AbortError'));
+      };
+
+      pedagogicalApprovalResolveRef.current = () => {
+        signal.removeEventListener('abort', handleAbort);
+        pedagogicalApprovalResolveRef.current = null;
+        setAwaitingPedagogicalApproval(false);
+        resolve();
+      };
+
+      signal.addEventListener('abort', handleAbort, { once: true });
+    });
 
   // Auto-start generation when session is loaded
   useEffect(() => {
@@ -349,6 +382,10 @@ function GenerationPreviewContent() {
         imageMapping = currentSession.imageMapping;
       }
 
+      // ── Generate outlines first (infers languageDirective) ──
+      let outlines = currentSession.sceneOutlines;
+      let languageDirective: string | undefined = currentSession.languageDirective;
+
       // Create stage client-side
       const stageId = nanoid(10);
       const stage: Stage = {
@@ -360,9 +397,9 @@ function GenerationPreviewContent() {
         updatedAt: Date.now(),
       };
 
-      // ── Generate outlines first (infers languageDirective) ──
-      let outlines = currentSession.sceneOutlines;
-      let languageDirective: string | undefined;
+      if (languageDirective) {
+        stage.languageDirective = languageDirective;
+      }
 
       const outlineStepIdx = activeSteps.findIndex((s) => s.id === 'outline');
       setCurrentStepIndex(outlineStepIdx >= 0 ? outlineStepIdx : 0);
@@ -488,7 +525,91 @@ function GenerationPreviewContent() {
         await new Promise((resolve) => setTimeout(resolve, 800));
       }
 
-      // ── Agent generation (after outlines — uses languageDirective + outlines) ──
+      const reviewStepIdx = activeSteps.findIndex((s) => s.id === 'pedagogical-review');
+      if (reviewStepIdx >= 0) setCurrentStepIndex(reviewStepIdx);
+
+      let pedagogicalReviewResult = currentSession.pedagogicalReview;
+      if (pedagogicalReviewResult) {
+        // When the page reloads mid-review we restore the approved blueprint instead of
+        // silently dropping back to raw outlines. That keeps the teacher approval gate real.
+        stage.pedagogicalBlueprint = {
+          lessonBlueprint: pedagogicalReviewResult.blueprint,
+          review: {
+            revisionCount: pedagogicalReviewResult.revisionCount,
+            reviewerResults: pedagogicalReviewResult.reviewerResults,
+            adjudication: pedagogicalReviewResult.adjudication,
+          },
+        };
+        outlines = pedagogicalReviewResult.approvedOutlines;
+        setStreamingOutlines(outlines);
+        setPedagogicalReview(pedagogicalReviewResult);
+      }
+
+      if (!pedagogicalReviewResult) {
+        setStatusMessage('Running pedagogical blueprint review (SME / Merrill / Schön)');
+
+        const pedagogicalResp = await fetch('/api/generate/pedagogical-step', {
+          method: 'POST',
+          headers: getApiHeaders(),
+          body: JSON.stringify({
+            requirement: currentSession.requirements.requirement,
+            languageDirective,
+            outlines,
+          }),
+          signal,
+        });
+
+        const pedagogicalData = await pedagogicalResp.json().catch(() => ({
+          success: false,
+          error: 'Pedagogical review failed',
+        }));
+
+        if (!pedagogicalResp.ok || !pedagogicalData.success) {
+          throw new Error(pedagogicalData.error || 'Pedagogical review failed');
+        }
+
+        pedagogicalReviewResult = pedagogicalData as PedagogicalPreflightResult;
+        stage.pedagogicalBlueprint = {
+          lessonBlueprint: pedagogicalReviewResult.blueprint,
+          review: {
+            revisionCount: pedagogicalReviewResult.revisionCount,
+            reviewerResults: pedagogicalReviewResult.reviewerResults,
+            adjudication: pedagogicalReviewResult.adjudication,
+          },
+        };
+        outlines = pedagogicalReviewResult.approvedOutlines;
+        setStreamingOutlines(outlines);
+        setPedagogicalReview(pedagogicalReviewResult);
+
+        const updatedSession = {
+          ...currentSession,
+          sceneOutlines: outlines,
+          languageDirective,
+          pedagogicalReview: pedagogicalReviewResult,
+          awaitingPedagogicalApproval: true,
+        };
+        setSession(updatedSession);
+        sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
+        currentSession = updatedSession;
+        activeSteps = getActiveSteps(currentSession);
+      }
+
+      if (currentSession.awaitingPedagogicalApproval !== false) {
+        setStatusMessage('Review completed. Waiting for teacher approval before scene generation.');
+        await waitForPedagogicalApproval(signal);
+
+        const updatedSession = {
+          ...currentSession,
+          awaitingPedagogicalApproval: false,
+        };
+        setSession(updatedSession);
+        sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
+        currentSession = updatedSession;
+      }
+
+      setStatusMessage('Pedagogical blueprint approved, continuing with scene generation.');
+
+      // ── Agent generation (after the teacher-approved blueprint — uses languageDirective + outlines) ──
       const settings = useSettingsStore.getState();
       let agents: Array<{
         id: string;
@@ -899,12 +1020,12 @@ function GenerationPreviewContent() {
         </Button>
       </motion.div>
 
-      <div className="z-10 w-full max-w-lg space-y-8 flex flex-col items-center">
+      <div className="z-10 flex w-full max-w-5xl flex-col items-center space-y-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
-          className="w-full"
+          className="w-full max-w-lg"
         >
           <Card className="relative overflow-hidden border-muted/40 shadow-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl min-h-[400px] flex flex-col items-center justify-center p-8 md:p-12">
             {/* Progress Dots */}
@@ -1054,6 +1175,14 @@ function GenerationPreviewContent() {
           </Card>
         </motion.div>
 
+        {activeStep.id === 'pedagogical-review' && pedagogicalReview && (
+          <PedagogicalReviewPanel
+            review={pedagogicalReview}
+            waitingForApproval={awaitingPedagogicalApproval}
+            onApprove={() => pedagogicalApprovalResolveRef.current?.()}
+          />
+        )}
+
         {/* Footer Action */}
         <div className="h-16 flex items-center justify-center w-full">
           <AnimatePresence>
@@ -1074,8 +1203,10 @@ function GenerationPreviewContent() {
                 className="flex items-center gap-3 text-sm text-muted-foreground/50 font-medium uppercase tracking-widest"
               >
                 <Sparkles className="size-3 animate-pulse" />
-                {t('generation.aiWorking')}
-                {generatedAgents.length > 0 && !showAgentReveal && (
+                {awaitingPedagogicalApproval
+                  ? 'Teacher approval required'
+                  : t('generation.aiWorking')}
+                {generatedAgents.length > 0 && !showAgentReveal && !awaitingPedagogicalApproval && (
                   <button
                     onClick={() => setShowAgentReveal(true)}
                     className="ml-2 flex items-center gap-1.5 rounded-full border border-purple-300/30 bg-purple-500/10 px-3 py-1 text-xs font-medium normal-case tracking-normal text-purple-400 transition-colors hover:bg-purple-500/20 hover:text-purple-300"

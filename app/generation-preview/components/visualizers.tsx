@@ -13,6 +13,9 @@ import {
   MessageSquare,
   Focus,
   Play,
+  ShieldCheck,
+  CheckCircle2,
+  RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -34,6 +37,8 @@ export function StepVisualizer({
       return <WebSearchVisualizer sources={webSearchSources || []} />;
     case 'outline':
       return <StreamingOutlineVisualizer outlines={outlines || []} />;
+    case 'pedagogical-review':
+      return <PedagogicalReviewVisualizer />;
     case 'agent-generation':
       return <AgentGenerationVisualizer />;
     case 'slide-content':
@@ -291,6 +296,68 @@ function StreamingOutlineVisualizer({ outlines }: { outlines: SceneOutline[] }) 
         animate={{ opacity: [0, 1, 0] }}
         transition={{ repeat: Infinity, duration: 0.8 }}
       />
+    </div>
+  );
+}
+
+function PedagogicalReviewVisualizer() {
+  return (
+    <div className="relative size-44 flex items-center justify-center">
+      <motion.div
+        className="absolute inset-0 rounded-full bg-emerald-500/10 blur-2xl"
+        animate={{ scale: [0.92, 1.08, 0.92], opacity: [0.35, 0.6, 0.35] }}
+        transition={{ duration: 3, repeat: Infinity }}
+      />
+
+      <div className="relative grid grid-cols-3 gap-3">
+        {[
+          { label: 'SME', color: 'from-sky-500/80 to-blue-500/80', delay: 0 },
+          { label: 'Merrill', color: 'from-violet-500/80 to-fuchsia-500/80', delay: 0.2 },
+          { label: 'Schön', color: 'from-emerald-500/80 to-teal-500/80', delay: 0.4 },
+        ].map((reviewer) => (
+          <motion.div
+            key={reviewer.label}
+            className={cn(
+              'relative h-24 w-20 rounded-2xl border border-white/10 bg-gradient-to-br p-3 text-white shadow-xl',
+              reviewer.color,
+            )}
+            animate={{ y: [0, -6, 0] }}
+            transition={{ duration: 1.8, repeat: Infinity, delay: reviewer.delay }}
+          >
+            <div className="text-[10px] font-semibold tracking-wide">{reviewer.label}</div>
+            <motion.div
+              className="mt-4 flex items-center justify-center"
+              animate={{ rotate: [0, 180, 360] }}
+              transition={{ duration: 3, repeat: Infinity, ease: 'linear', delay: reviewer.delay }}
+            >
+              <RefreshCw className="size-5 text-white/80" />
+            </motion.div>
+            <motion.div
+              className="absolute -bottom-2 right-2 rounded-full bg-white/15 p-1"
+              animate={{ scale: [0.9, 1.05, 0.9] }}
+              transition={{ duration: 1.2, repeat: Infinity, delay: reviewer.delay }}
+            >
+              <ShieldCheck className="size-3.5" />
+            </motion.div>
+          </motion.div>
+        ))}
+      </div>
+
+      <motion.div
+        className="absolute -bottom-1 rounded-full border border-emerald-400/30 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-600 dark:text-emerald-300"
+        animate={{ opacity: [0.7, 1, 0.7] }}
+        transition={{ duration: 1.8, repeat: Infinity }}
+      >
+        Review gate
+      </motion.div>
+
+      <motion.div
+        className="absolute -top-2 -right-1 rounded-full bg-emerald-500 p-1.5 text-white shadow-lg shadow-emerald-500/30"
+        animate={{ scale: [0.95, 1.1, 0.95] }}
+        transition={{ duration: 1.4, repeat: Infinity }}
+      >
+        <CheckCircle2 className="size-4" />
+      </motion.div>
     </div>
   );
 }

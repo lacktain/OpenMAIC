@@ -329,7 +329,11 @@
     "outlineGenerateFailed": "Ошибка генерации структуры, попробуйте позже",
     "webSearching": "Поиск в интернете",
     "webSearchingDesc": "Поиск актуальной информации в сети",
-    "webSearchFailed": "Ошибка веб-поиска"
+    "webSearchFailed": "Ошибка веб-поиска",
+    "pedagogicalReview": "Проверка педагогического плана",
+    "pedagogicalReviewDesc": "Перед продолжением генерации выполняется проверка SME, Merrill и Schön",
+    "pedagogicalReview": "Проверка педагогического плана",
+    "pedagogicalReviewDesc": "Перед продолжением генерации выполняется проверка SME, Merrill и Schön"
   },
   "settings": {
     "title": "Настройки",

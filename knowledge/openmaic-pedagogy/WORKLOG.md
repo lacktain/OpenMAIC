@@ -142,3 +142,35 @@ To fully align the implementation with the earlier 19 academic weeks, gather or 
 - Local commit/push preparation is in progress, but the repo currently only has the public upstream OpenMAIC remote configured.
 - A writable remote or fork is still needed before the branch can be pushed externally.
 
+## 2026-04-23
+
+### Shared-core mapping and GUI pedagogical gate
+- Added `knowledge/openmaic-pedagogy/SHARED-GENERATION-CORE-MAP.md` after a full code read of the relevant GUI and server paths.
+  - explicitly maps the browser adapter, server/job adapter, and the shared lower-level generation core
+  - identifies the real divergence as orchestration, not scene-generation primitives
+  - records the architectural decision to treat post-outline pedagogical preflight as the first shared canonical slice
+- Added `lib/generation/pedagogical-preflight.ts` as a shared wrapper around the outline-stage pedagogical gate.
+  - both adapters can now depend on the same post-outline review contract instead of each growing their own review logic
+  - returns GUI-friendly review events in addition to the approved blueprint result
+- Refactored `lib/server/classroom-generation.ts` to call the shared pedagogical preflight wrapper instead of directly owning the gate call.
+  - behavior remains the same for the async job path
+  - this keeps the server path aligned while the browser path is brought onto the same review contract
+- Added `app/api/generate/pedagogical-step/route.ts`.
+  - runs the same hybrid SME / Merrill / Schön review flow for the GUI path using the browser-selected model headers
+  - returns blueprint, reviewer verdicts, adjudication, approved outlines, review rounds, and display events
+- Updated the GUI preview flow in `app/generation-preview/page.tsx`, `types.ts`, and `components/visualizers.tsx`.
+  - inserted a dedicated `pedagogical-review` step after outline generation and before agent/scene generation
+  - persists the pedagogical review result in session storage so a refresh cannot silently skip the teacher gate
+  - writes `stage.pedagogicalBlueprint` on the client stage before classroom generation continues
+  - pauses the GUI flow for explicit teacher approval before the first scene is generated
+- Added `app/generation-preview/components/pedagogical-review-panel.tsx`.
+  - shows reviewer verdicts and scores for SME / Merrill / Schön
+  - shows review timeline events and approved-outline preview
+  - exposes an explicit `Approve blueprint and continue` control before scene generation resumes
+- Added i18n step labels for the new pedagogical review phase in all shipped locales.
+- Added `tests/server/pedagogical-preflight.test.ts` for the new shared wrapper/event behavior.
+- Re-ran focused validation after the change:
+  - `corepack pnpm exec prettier --write ...`
+  - `corepack pnpm exec tsc --noEmit`
+  - `corepack pnpm exec vitest run tests/server/pedagogical-preflight.test.ts tests/server/pedagogical-blueprint-review.test.ts tests/server/classroom-generation-blueprint.test.ts`
+

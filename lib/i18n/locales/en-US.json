@@ -329,7 +329,11 @@
     "outlineGenerateFailed": "Outline generation failed, please try again later",
     "webSearching": "Web Search",
     "webSearchingDesc": "Searching the web for up-to-date information",
-    "webSearchFailed": "Web search failed"
+    "webSearchFailed": "Web search failed",
+    "pedagogicalReview": "Reviewing Pedagogical Blueprint",
+    "pedagogicalReviewDesc": "Running SME, Merrill, and Schön review before generation continues",
+    "pedagogicalReview": "Reviewing Pedagogical Blueprint",
+    "pedagogicalReviewDesc": "Running SME, Merrill, and Schön review before generation continues"
   },
   "settings": {
     "title": "Settings",

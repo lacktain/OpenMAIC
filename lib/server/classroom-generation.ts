@@ -6,11 +6,11 @@ import {
   applyOutlineFallbacks,
   generateSceneOutlinesFromRequirements,
 } from '@/lib/generation/outline-generator';
+import { BlueprintReviewError } from '@/lib/generation/lesson-blueprint';
 import {
-  BlueprintReviewError,
-  type BlueprintReviewGateResult,
-  runBlueprintReviewGate,
-} from '@/lib/generation/lesson-blueprint';
+  runPedagogicalPreflight,
+  type PedagogicalPreflightResult,
+} from '@/lib/generation/pedagogical-preflight';
 import {
   createSceneWithActions,
   generateSceneActions,
@@ -313,9 +313,12 @@ export async function generateClassroom(
     totalScenes: outlines.length,
   });
 
-  let blueprintGate: BlueprintReviewGateResult;
+  let blueprintGate: PedagogicalPreflightResult;
   try {
-    blueprintGate = await runBlueprintReviewGate(
+    // Shared post-outline preflight. The server job and the browser adapter should
+    // both pass through this same pedagogical checkpoint so the review contract does
+    // not drift between entry paths.
+    blueprintGate = await runPedagogicalPreflight(
       {
         requirement,
         languageDirective,

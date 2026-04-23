@@ -1,4 +1,12 @@
-import { ScanLine, Search, Bot, FileText, LayoutPanelLeft, Clapperboard } from 'lucide-react';
+import {
+  ScanLine,
+  Search,
+  Bot,
+  FileText,
+  LayoutPanelLeft,
+  Clapperboard,
+  ShieldCheck,
+} from 'lucide-react';
 import { useSettingsStore } from '@/lib/store/settings';
 import type {
   SceneOutline,
@@ -6,6 +14,7 @@ import type {
   PdfImage,
   ImageMapping,
 } from '@/lib/types/generation';
+import type { PedagogicalPreflightResult } from '@/lib/generation/pedagogical-preflight';
 
 // Session state stored in sessionStorage
 export interface GenerationSessionState {
@@ -27,6 +36,9 @@ export interface GenerationSessionState {
   researchSources?: Array<{ title: string; url: string }>;
   // Language directive inferred from outline generation
   languageDirective?: string;
+  // Pedagogical review is persisted so a refresh cannot silently skip the teacher gate.
+  pedagogicalReview?: PedagogicalPreflightResult;
+  awaitingPedagogicalApproval?: boolean;
 }
 
 export type GenerationStep = {
@@ -58,6 +70,13 @@ export const ALL_STEPS: GenerationStep[] = [
     description: 'generation.generatingOutlinesDesc',
     icon: FileText,
     type: 'writing',
+  },
+  {
+    id: 'pedagogical-review',
+    title: 'generation.pedagogicalReview',
+    description: 'generation.pedagogicalReviewDesc',
+    icon: ShieldCheck,
+    type: 'analysis',
   },
   {
     id: 'agent-generation',

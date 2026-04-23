@@ -329,7 +329,11 @@
     "outlineGenerateFailed": "アウトラインの生成に失敗しました。しばらくしてからお試しください",
     "webSearching": "ウェブ検索",
     "webSearchingDesc": "ウェブで最新情報を検索しています",
-    "webSearchFailed": "ウェブ検索に失敗しました"
+    "webSearchFailed": "ウェブ検索に失敗しました",
+    "pedagogicalReview": "教育設計ブループリントをレビュー中",
+    "pedagogicalReviewDesc": "生成を続ける前に SME、Merrill、Schön レビューを実行しています",
+    "pedagogicalReview": "教育設計ブループリントをレビュー中",
+    "pedagogicalReviewDesc": "生成を続ける前に SME、Merrill、Schön レビューを実行しています"
   },
   "settings": {
     "title": "設定",

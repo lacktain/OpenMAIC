@@ -329,7 +329,9 @@
     "outlineGenerateFailed": "فشل توليد المخطط، يرجى المحاولة لاحقًا",
     "webSearching": "بحث في الإنترنت",
     "webSearchingDesc": "جارٍ البحث في الإنترنت عن معلومات محدّثة",
-    "webSearchFailed": "فشل البحث في الإنترنت"
+    "webSearchFailed": "فشل البحث في الإنترنت",
+    "pedagogicalReview": "مراجعة المخطط التربوي",
+    "pedagogicalReviewDesc": "يتم تشغيل مراجعة SME وMerrill وSchön قبل متابعة التوليد"
   },
   "settings": {
     "title": "الإعدادات",
