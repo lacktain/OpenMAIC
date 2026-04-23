@@ -174,3 +174,18 @@ To fully align the implementation with the earlier 19 academic weeks, gather or 
   - `corepack pnpm exec tsc --noEmit`
   - `corepack pnpm exec vitest run tests/server/pedagogical-preflight.test.ts tests/server/pedagogical-blueprint-review.test.ts tests/server/classroom-generation-blueprint.test.ts`
 
+### Import/export preservation for teacher-reviewed classrooms
+- Patched local stage persistence so the full `Stage` shape is stored instead of a narrow whitelist.
+  - this preserves `stage.pedagogicalBlueprint` when a reviewed classroom is saved locally and later reopened or exported
+- Extended classroom ZIP manifests to carry `stage.pedagogicalBlueprint`.
+  - exported teacher-reviewed classrooms now retain their pedagogical review metadata when shared between installations
+- Updated classroom ZIP import to restore the pedagogical blueprint into the receiving installation's local stage record.
+  - this keeps the review contract intact for teacher-to-student and teacher-to-teacher sharing flows
+- Added/updated validation for the round trip:
+  - `tests/export/classroom-zip.test.ts`
+  - `tests/utils/stage-storage.test.ts`
+  - `tests/server/classroom-generation-blueprint.test.ts`
+- Re-ran validation after the import/export preservation patch:
+  - `corepack pnpm exec vitest run tests/export/classroom-zip.test.ts tests/utils/stage-storage.test.ts tests/server/classroom-generation-blueprint.test.ts`
+  - `corepack pnpm exec tsc --noEmit`
+

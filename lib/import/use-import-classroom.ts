@@ -156,7 +156,8 @@ export function useImportClassroom(onSuccess?: () => void) {
         setPhase('writingCourse');
         toast.loading(t('import.writingCourse'), { id: toastId });
 
-        // Write stage
+        // Write stage, preserving pedagogical review metadata so imported
+        // classrooms retain the teacher-reviewed blueprint contract.
         await db.stages.put({
           id: newStageId,
           name: manifest.stage.name || 'Imported Classroom',
@@ -166,6 +167,7 @@ export function useImportClassroom(onSuccess?: () => void) {
           createdAt: manifest.stage.createdAt || now,
           updatedAt: now,
           agentIds: newAgentIds.length > 0 ? newAgentIds : undefined,
+          pedagogicalBlueprint: manifest.stage.pedagogicalBlueprint,
         });
 
         // Write agents

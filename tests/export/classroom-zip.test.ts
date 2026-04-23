@@ -100,6 +100,24 @@ describe('manifest round-trip', () => {
         style: 'professional',
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        pedagogicalBlueprint: {
+          lessonBlueprint: {
+            schemaVersion: 'pedagogical-blueprint/v1',
+            lessonTitle: 'Cloud networking basics',
+          },
+          review: {
+            revisionCount: 1,
+            reviewerResults: [],
+            approvedOutlines: [],
+            adjudication: {
+              verdict: 'approved',
+              summary: 'Looks good',
+              revisionNeeded: false,
+            },
+            reviewRounds: [],
+          },
+        } as any,
       },
       agents: [
         {
@@ -132,6 +150,7 @@ describe('manifest round-trip', () => {
 
     expect(deserialized.formatVersion).toBe(CLASSROOM_ZIP_FORMAT_VERSION);
     expect(deserialized.stage.name).toBe('Test Course');
+    expect(deserialized.stage.pedagogicalBlueprint?.review.revisionCount).toBe(1);
     expect(deserialized.agents).toHaveLength(1);
     expect(deserialized.scenes).toHaveLength(1);
     expect(deserialized.scenes[0].actions?.[0]).toMatchObject({

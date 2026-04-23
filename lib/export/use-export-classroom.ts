@@ -36,9 +36,11 @@ export function useExportClassroom() {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
 
-      // 1. Read latest stage name from IndexedDB (may have been renamed on home page)
+      // 1. Read the latest stage snapshot from IndexedDB (may have been renamed
+      // on the home page, and may contain persisted pedagogical review data).
       const freshStage = await db.stages.get(stage.id);
-      const latestName = freshStage?.name || stage.name;
+      const sourceStage = freshStage ?? stage;
+      const latestName = sourceStage.name || stage.name;
 
       // 2. Collect agents from DB
       const agentRecords = await getGeneratedAgentsByStageId(stage.id);
@@ -58,11 +60,12 @@ export function useExportClassroom() {
       // 6. Build manifest
       const manifestStage: ManifestStage = {
         name: latestName,
-        description: stage.description,
-        language: stage.languageDirective,
-        style: stage.style,
-        createdAt: stage.createdAt,
-        updatedAt: stage.updatedAt,
+        description: sourceStage.description,
+        language: sourceStage.languageDirective,
+        style: sourceStage.style,
+        createdAt: sourceStage.createdAt,
+        updatedAt: sourceStage.updatedAt,
+        pedagogicalBlueprint: sourceStage.pedagogicalBlueprint,
       };
 
       const manifestAgents: ManifestAgent[] = agentRecords.map((a) => ({

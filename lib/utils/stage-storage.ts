@@ -37,17 +37,15 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
   try {
     const now = Date.now();
 
-    // Save to stages table
+    // Save the whole stage shape so rich metadata, including pedagogical
+    // review artifacts, survives local persistence and later export/import.
     await db.stages.put({
+      ...data.stage,
       id: stageId,
       name: data.stage.name || 'Untitled Stage',
-      description: data.stage.description,
       createdAt: data.stage.createdAt || now,
       updatedAt: now,
-      languageDirective: data.stage.languageDirective,
-      style: data.stage.style,
       currentSceneId: data.currentSceneId || undefined,
-      agentIds: data.stage.agentIds,
     });
 
     // Delete old scenes first to avoid orphaned data

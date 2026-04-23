@@ -1,6 +1,7 @@
 // lib/export/classroom-zip-types.ts
 import type { SceneType, SceneContent } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
+import type { PedagogicalBlueprintRecord } from '@/lib/types/blueprint';
 import type { Slide } from '@/lib/types/slides';
 
 export const CLASSROOM_ZIP_FORMAT_VERSION = 1;
@@ -23,6 +24,12 @@ export interface ManifestStage {
   style?: string;
   createdAt: number;
   updatedAt: number;
+  /**
+   * Preserve teacher-reviewed pedagogical metadata across classroom sharing
+   * so exported classrooms can be inspected, re-imported, and re-exported
+   * without losing the review contract.
+   */
+  pedagogicalBlueprint?: PedagogicalBlueprintRecord;
 }
 
 export interface ManifestAgent {

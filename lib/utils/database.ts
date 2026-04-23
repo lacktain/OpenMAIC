@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Scene, SceneType, SceneContent, Whiteboard } from '@/lib/types/stage';
+import type { Stage, Scene, SceneType, SceneContent, Whiteboard } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import type {
   SessionType,
@@ -36,18 +36,14 @@ export interface Snapshot {
 // ==================== Database Table Type Definitions ====================
 
 /**
- * Stage table - Course basic info
+ * Stage table - Course basic info.
+ *
+ * Keep this aligned with the full Stage shape so classroom metadata,
+ * including pedagogical review artifacts, survives local persistence,
+ * export, and re-import flows.
  */
-export interface StageRecord {
-  id: string; // Primary key
-  name: string;
-  description?: string;
-  createdAt: number; // timestamp
-  updatedAt: number; // timestamp
-  languageDirective?: string;
-  style?: string;
+export interface StageRecord extends Stage {
   currentSceneId?: string;
-  agentIds?: string[]; // Agent IDs selected at creation time
 }
 
 /**
